@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no" />
+  <title>Locate component | Sample | ArcGIS Maps SDK for JavaScript 4.32</title>
+
+  <style>
+    html,
+    body {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+    .popup-content {
+      font-family: 'Arial', sans-serif;
+      padding: 15px;
+      color: #333;
+      max-width: 350px;
+      word-wrap: break-word;
+    }
+  
+    .popup-content b {
+      color: #2a2a2a;
+      font-size: 16px;
+    }
+  
+    .popup-content .distance {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 10px;
+    }
+  
+    .popup-content img {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      margin-bottom: 15px;
+    }
+  
+    .popup-content .summary {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #555;
+      margin-bottom: 15px;
+    }
+  
+    .popup-content a {
+      color: #0066cc;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 14px;
+    }
+  
+    .popup-content a:hover {
+      text-decoration: underline;
+    }
+  
+    /* Responsive design for smaller screens */
+    @media (max-width: 600px) {
+      .popup-content {
+        max-width: 100%;
+        padding: 10px;
+      }
+  
+      .popup-content b {
+        font-size: 14px;
+      }
+  
+      .popup-content .distance,
+      .popup-content .summary {
+        font-size: 12px;
+      }
+    }
+
+  </style>
+
+    <!-- Load Calcite components from CDN -->
+    <script type="module" src="https://js.arcgis.com/calcite-components/3.0.3/calcite.esm.js"></script>
+
+    <!-- Load the ArcGIS Maps SDK for JavaScript from CDN -->
+    <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/light/main.css" />
+    <script src="https://js.arcgis.com/4.32/"></script>
+
+    <!-- Load Map components from CDN-->
+    <script
+      type="module"
+      src="https://js.arcgis.com/map-components/4.32/arcgis-map-components.esm.js"
+    ></script>
+    <script>
+    require([
+      "esri/views/MapView",
+      "esri/layers/GraphicsLayer",
+      "esri/Graphic",
+      "esri/core/reactiveUtils"
+    ], function(MapView, GraphicsLayer, Graphic, reactiveUtils) {
+      
+      const mapComponent = document.querySelector("arcgis-map");
+      const locateWidget = document.querySelector("arcgis-locate");
+      const graphicsLayer = new GraphicsLayer();
+      let item0 = {};
+
+      mapComponent.addEventListener("arcgisViewReadyChange", (evt) => {
+        mapComponent.map.add(graphicsLayer)
+        reactiveUtils.on(
+            () => mapComponent.popup,
+            "trigger-action",
+            (event) => {
+                console.log(mapComponent.popup.features[0].popupTemplate.content)
+              // Execute the measureThis() function if the measure-this action is clicked.
+              if (event.action.id === "readText") {                               
+                readTextAloud(stripHtml(mapComponent.popup.features[0].popupTemplate.content))
+              }
+              if (event.action.id === "stopSpeak"){
+                window.speechSynthesis.cancel();
+              }
+            }
+          );
+      });
+
+      
+
+      locateWidget.addEventListener("arcgisSuccess", (event) => {
+        console.log(event)
+        if (event.detail.position) {
+        const coords = event.detail.position.coords;
+        console.log("Ubicación actualizada:", coords.latitude, coords.longitude);
+        fetchWikipediaPlaces(coords.latitude, coords.longitude)
+        
+          
+        }
+    })
+      
+    
+  
+   function fetchWikipediaPlaces(lat, lon) {
+        const url = `https://ru.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}%7C${lon}&gsradius=10000&gslimit=100&format=json&origin=*`;
+        
+        fetch(url)
+          .then(response => response.json())
+          .then(data => {
+            console.log("Datos obtenidos de Wikipedia:", data);
+            graphicsLayer.removeAll();
+            let firstGraphicAdded = false;
+            
+            
+            data.query.geosearch.forEach((place, index) => {
+               fetchWikipediaPageDetails(place).then((details) => {
+       
+                const point = {
+                  type: "point",
+                  longitude: place.lon,
+                  latitude: place.lat
+                };
+
+                const markerSymbol = {
+                  type: "simple-marker",
+                  color: [226, 119, 40],
+                  outline: {
+                    color: [255, 255, 255],
+                    width: 1
+                  }
+                };
+
+                const popupTemplate = {
+                  title: place.title,
+                  content: `
+                    <div class="popup-content">
+                      <div class="distance">
+                        <b>Distancia:</b> ${place.dist} metros
+                      </div>
+                      <img src="${details.image}" alt="${place.title}" />
+                      <div class="summary">${details.summary}</div>
+                      <a href="https://ru.wikipedia.org/wiki/${place.title}" target="_blank">Ver más en Wikipedia</a>
+                      <br>
+                      <br>
+                      <button id="readText" class="read-text">Читать текст</button>
+                    </div>
+                  `,
+                actions: [{
+      id: "readText",
+      title: "Leer texto",
+      icon: "play"  
+    },
+    {
+        id: "stopSpeak",
+        title: "Parar voz",
+        icon: "pause"
+    }]
+                };
+
+
+                const graphic = new Graphic({
+                  geometry: point,
+                  symbol: markerSymbol,
+                  popupTemplate:popupTemplate
+                });
+
+                graphicsLayer.add(graphic);
+            
+            })
+              
+     
+            });
+          })
+          .catch(error => console.error("Error al obtener lugares de Wikipedia:", error));
+      }
+
+      function fetchWikipediaPageDetails(place) {
+        const url = `https://ru.wikipedia.org/w/api.php?action=query&prop=pageimages|extracts&titles=${encodeURIComponent(place.title)}&exintro=true&explaintext=true&pithumbsize=200&format=json&origin=*`;
+        
+        return fetch(url)
+          .then(response => response.json())
+          .then(data => {
+            const pages = data.query.pages;
+            const page = Object.values(pages)[0];
+            return {
+              summary: page.extract || "No hay descripción disponible.",
+              image: page.thumbnail ? page.thumbnail.source : "https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg"
+            };
+          })
+          .catch(error => {
+            console.error("Error al obtener detalles de la página de Wikipedia:", error);
+            return { summary: "", image: "https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg" };
+          });
+      }
+
+      // Función para leer el texto en voz alta
+        function readTextAloud(text) {
+        const speech = new SpeechSynthesisUtterance(text); // Crear una instancia de SpeechSynthesisUtterance
+        speech.lang = 'es-ES'; // Puedes cambiar el idioma según lo necesites (ej. "en-US" para inglés)
+        speech.rate = 1; // Velocidad de lectura (1 es la normal)
+        speech.pitch = 1; // Tono de la voz (1 es el tono normal)
+        
+        // Comenzar la lectura
+        window.speechSynthesis.speak(speech);
+        };
+
+        function stripHtml(html) {
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = html;
+            return tempDiv.textContent || tempDiv.innerText || "";
+        }
+
+   
+  
+    });
+  </script>
+</head>
+
+
+
+<body>
+  <arcgis-map basemap="topo-vector" center="-56.049, 38.485" zoom="3">
+    <arcgis-zoom position="top-left"></arcgis-zoom>
+    <arcgis-locate position="top-left" enableHighAccuracy></arcgis-locate>
+  </arcgis-map>
+</body>
+
+
+</html>
